@@ -8,9 +8,9 @@ from google.generativeai.types import HarmCategory, HarmBlockThreshold
 from PIL import Image
 
 # --- CONFIGURAZIONE PAGINA ---
-st.set_page_config(page_title="AI Web Auditor 🚀", layout="wide")
+st.set_page_config(page_title="AI Web Auditor Pro 🚀", layout="wide")
 
-# --- TRUCCO PER STREAMLIT CLOUD (BROWSER INSTALL) ---
+# --- TRUCCO PER STREAMLIT CLOUD ---
 if "playwright_installed" not in st.session_state:
     try:
         subprocess.run(["playwright", "install", "chromium"])
@@ -18,31 +18,24 @@ if "playwright_installed" not in st.session_state:
     except Exception as e:
         st.error(f"Errore installazione browser: {e}")
 
-# --- LOGICA DI AUDIT TECNICO E VISIVO ---
+# --- LOGICA DI AUDIT AVANZATA (STILE WAPPALYZER) ---
 async def run_audit(url, api_key):
     genai.configure(api_key=api_key)
-    
-    # Impostazioni di sicurezza per evitare rifiuti dell'IA (Finish Reason 1)
     safety_settings = {
         HarmCategory.HARM_CATEGORY_HATE_SPEECH: HarmBlockThreshold.BLOCK_NONE,
         HarmCategory.HARM_CATEGORY_HARASSMENT: HarmBlockThreshold.BLOCK_NONE,
         HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT: HarmBlockThreshold.BLOCK_NONE,
         HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT: HarmBlockThreshold.BLOCK_NONE,
     }
-    
     model = genai.GenerativeModel('models/gemini-3-flash-preview')
     screenshot_path = "/tmp/screenshot.png"
     
     async with async_playwright() as p:
-        browser = await p.chromium.launch(
-            headless=True, 
-            args=["--no-sandbox", "--disable-setuid-sandbox", "--disable-gpu", "--disable-dev-shm-usage"]
-        )
-        context = await browser.new_context(viewport={'width': 1280, 'height': 800})
+        browser = await p.chromium.launch(headless=True, args=["--no-sandbox", "--disable-gpu"])
+        context = await browser.new_context(user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36")
         page = await context.new_page()
         
         try:
-            # 1. Navigazione e acquisizione dati tecnici
             await page.goto(url, wait_until="networkidle", timeout=60000)
             
             # --- ANALISI TECNICA AVANZATA ---
@@ -85,87 +78,70 @@ async def run_audit(url, api_key):
                 };
             }""")
             
-            # 2. Screenshot per analisi visiva
             await page.screenshot(path=screenshot_path)
             img = Image.open(screenshot_path)
             
-            # 3. Prompt multimodale (Codice + Immagine)
             prompt = f"""
-            Analizza questo sito web basandoti sullo screenshot e su questi dati tecnici:
-            - CMS: {tech_data['cms']}
-            - Plugin rilevati: {tech_data['plugins'][:8]}
-            - Librerie/Tracking: {tech_data['libraries']}
-            
-            Fornisci un report professionale in italiano:
-            1. Analisi Tecnica: Commenta la tecnologia rilevata (es. WordPress, plugin attivi, tracciamenti mancanti).
-            2. Analisi UX/UI: Commenta l'impatto visivo e la chiarezza dell'interfaccia.
-            3. Consiglio Strategico: Dimmi la prima cosa tecnica o estetica da cambiare per migliorare il sito.
+            Analizza lo screenshot e questi dati tecnici 'under-the-hood':
+            CMS & Piattaforma: {tech_data['cms']}
+            Page Builder: {tech_data['builders']}
+            E-commerce: {tech_data['ecommerce']}
+            Tracking & Analitica: {tech_data['analytics']}
+            Framework UI: {tech_data['ui_frameworks']}
+
+            Fornisci un audit professionale:
+            1. Analisi Stack Tecnologico: Valuta se la scelta tecnologica è coerente con il tipo di sito.
+            2. Analisi UX/UI: Come l'utente interagisce con il layout.
+            3. Opportunità: Suggerisci 2 tool o miglioramenti tecnici (es. "Manca Hotjar per registrare le sessioni" o "Passa da Elementor a Gutenberg per velocità").
             """
             
             response = model.generate_content([prompt, img], safety_settings=safety_settings)
+            return response.text, screenshot_path, tech_data
             
-            # Controllo validità risposta
-            if response.candidates and response.candidates[0].content.parts:
-                return response.text, screenshot_path, tech_data
-            else:
-                return "L'IA ha bloccato l'analisi visiva. Ecco i dati tecnici grezzi.", screenshot_path, tech_data
-                
         finally:
             await browser.close()
 
-# --- INTERFACCIA UTENTE (STREAMLIT) ---
-st.title("🔍 AI Web Auditor Professional")
-st.markdown("Analisi multimodale: Visiva (Gemini 3) + Tecnica (Playwright Scraper)")
-
-# Configurazione API Key dai Secrets o Sidebar
+# --- INTERFACCIA STREAMLIT ---
+st.title("🚀 AI Web Auditor Pro (Wappalyzer Style)")
 api_key = st.secrets.get("GEMINI_KEY", st.sidebar.text_input("Gemini API Key", type="password"))
+target_url = st.text_input("URL del sito:", placeholder="https://example.com")
 
-target_url = st.text_input("Inserisci l'URL da analizzare:", placeholder="https://www.esempio.it")
-
-if st.button("🚀 Avvia Audit Completo"):
+if st.button("Avvia Deep Audit"):
     if not target_url or not api_key:
-        st.warning("Inserisci URL e API Key per continuare.")
+        st.warning("Dati mancanti.")
     else:
         try:
-            with st.spinner("Scansione tecnica e interrogazione Gemini 3 in corso..."):
-                report, ss_path, tech_info = asyncio.run(run_audit(target_url, api_key))
+            with st.spinner("Scansione impronte digitali e analisi Gemini 3..."):
+                report, ss_path, tech = asyncio.run(run_audit(target_url, api_key))
                 
-                st.success("✅ Analisi completata!")
+                st.success("Analisi completata!")
+                t1, t2 = st.tabs(["📝 Report IA", "🔍 Tech Stack Detagliato"])
                 
-                # Layout a Tab per pulizia visiva
-                tab_report, tab_tech = st.tabs(["📄 Report Strategico", "🛠️ Stack Tecnologico"])
+                with t1:
+                    c1, c2 = st.columns([1, 1.2])
+                    c1.image(ss_path, use_container_width=True)
+                    c2.markdown(report)
                 
-                with tab_report:
-                    col_img, col_txt = st.columns([1, 1])
-                    with col_img:
-                        st.image(ss_path, caption="Screenshot Analizzato", use_container_width=True)
-                    with col_txt:
-                        st.markdown(report)
-                
-                with tab_tech:
-                    st.subheader("Dettagli Tecnici Rilevati")
-                    c1, c2, c3 = st.columns(3)
-                    c1.metric("CMS", tech_info['cms'])
-                    c2.metric("Meta Generator", tech_info['meta_generator'][:20])
-                    lib_count = sum(1 for v in tech_info['libraries'].values() if v)
-                    c3.metric("Tracking/Lib JS", f"{lib_count} rilevate")
+                with t2:
+                    st.subheader("Tecnologie Identificate")
+                    # Creiamo delle card per le tecnologie trovate
+                    cols = st.columns(4)
                     
-                    st.divider()
+                    # Logica per mostrare solo ciò che è stato trovato
+                    categories = {
+                        "CMS": tech['cms'],
+                        "Builders": tech['builders'],
+                        "E-com": tech['ecommerce'],
+                        "Analytics": tech['analytics']
+                    }
                     
-                    col_p, col_l = st.columns(2)
-                    with col_p:
-                        st.write("**Plugin WordPress:**")
-                        if tech_info['plugins']:
-                            st.json(tech_info['plugins'])
+                    for i, (name, data) in enumerate(categories.items()):
+                        found = [k.capitalize() for k, v in data.items() if v]
+                        cols[i % 4].write(f"**{name}**")
+                        if found:
+                            for item in found: cols[i % 4].success(item)
                         else:
-                            st.write("Nessun plugin WP identificato (o sito non WordPress).")
-                    
-                    with col_l:
-                        st.write("**Tracking & Librerie:**")
-                        st.write(tech_info['libraries'])
+                            cols[i % 4].info("Nessuno")
 
         except Exception as e:
-            st.error(f"Errore durante l'audit: {e}")
-
-st.divider()
-st.caption("AI Web Auditor v3.0 • Tecnologia 2026")
+            st.error(f"Errore: {e}")
