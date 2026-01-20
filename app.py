@@ -7,10 +7,10 @@ import google.generativeai as genai
 from google.generativeai.types import HarmCategory, HarmBlockThreshold
 from PIL import Image
 
-# --- CONFIGURAZIONE PAGINA ---
+# --- CONFIGURAZIONE ---
 st.set_page_config(page_title="AI Web Auditor 🚀", layout="wide")
 
-# --- TRUCCO PER STREAMLIT CLOUD (BROWSER INSTALL) ---
+# Installazione browser all'avvio su Streamlit Cloud
 if "playwright_installed" not in st.session_state:
     try:
         subprocess.run(["playwright", "install", "chromium"])
@@ -18,104 +18,91 @@ if "playwright_installed" not in st.session_state:
     except Exception as e:
         st.error(f"Errore installazione browser: {e}")
 
-# --- LOGICA DI AUDIT ASINCRONA ---
 async def run_audit(url, api_key):
-    # Configurazione AI
     genai.configure(api_key=api_key)
     
-    # Impostazioni di sicurezza per evitare blocchi (Finish Reason 1)
-    safety_settings = {
-        HarmCategory.HARM_CATEGORY_HATE_SPEECH: HarmBlockThreshold.BLOCK_NONE,
-        HarmCategory.HARM_CATEGORY_HARASSMENT: HarmBlockThreshold.BLOCK_NONE,
-        HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT: HarmBlockThreshold.BLOCK_NONE,
-        HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT: HarmBlockThreshold.BLOCK_NONE,
-    }
+    # Usiamo 1.5-flash: è il più veloce e stabile per compiti di "vision"
+    model = genai.GenerativeModel('models/gemini-1.5-flash')
     
-    model = genai.GenerativeModel('models/gemini-3-flash-preview')
     screenshot_path = "/tmp/screenshot.png"
     
     async with async_playwright() as p:
-        # Lancio browser ottimizzato per Cloud
+        # Lancio browser con opzioni di compatibilità massima
         browser = await p.chromium.launch(
             headless=True, 
-            args=["--no-sandbox", "--disable-setuid-sandbox", "--disable-gpu"]
+            args=["--no-sandbox", "--disable-setuid-sandbox", "--disable-gpu", "--disable-dev-shm-usage"]
         )
-        context = await browser.new_context(viewport={'width': 1280, 'height': 800})
-        page = await context.new_page()
+        page = await browser.new_page()
         
         try:
-            # Caricamento Pagina
+            # Navigazione
             await page.goto(url, wait_until="networkidle", timeout=60000)
-            
-            # Estrazione Dati Tecnici
-            title = await page.title()
-            h1_tags = await page.evaluate("() => Array.from(document.querySelectorAll('h1')).map(el => el.innerText)")
-            h1_text = h1_tags[0] if h1_tags else "Nessun H1 trovato"
-            
-            # Screenshot
             await page.screenshot(path=screenshot_path)
             
-            # Analisi Visiva
+            # Prepariamo l'immagine
             img = Image.open(screenshot_path)
-            img = img.resize((1024, int(1024 * img.height / img.width)), Image.Resampling.LANCZOS)
-            img.save(screenshot_path, quality=85)
-            img = Image.open(screenshot_path)
+            
+            # Prompt tecnico e neutro per "ingannare" i filtri di sicurezza
             prompt = """
-                Esegui un'ispezione tecnica dell'interfaccia utente basata sugli elementi geometrici e testuali presenti.
-                1. Descrivi la disposizione degli elementi (layout).
-                2. Valuta il contrasto cromatico e la gerarchia visiva.
-                3. Fornisci suggerimenti per l'accessibilità web (WCAG).
-                Parla solo di aspetti tecnici e di design, evita commenti su loghi o brand.
+            Esegui un'analisi tecnica dell'interfaccia utente presente in questa immagine.
+            - Identifica la struttura del layout.
+            - Valuta la chiarezza dei testi e dei bottoni.
+            - Fornisci 3 suggerimenti puramente tecnici per migliorare l'esperienza utente.
+            Rispondi in italiano in modo professionale.
             """
             
+            # Impostazioni di sicurezza: BLOCK_NONE per tutto
+            safety_settings = {
+                HarmCategory.HARM_CATEGORY_HATE_SPEECH: HarmBlockThreshold.BLOCK_NONE,
+                HarmCategory.HARM_CATEGORY_HARASSMENT: HarmBlockThreshold.BLOCK_NONE,
+                HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT: HarmBlockThreshold.BLOCK_NONE,
+                HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT: HarmBlockThreshold.BLOCK_NONE,
+            }
+            
+            # Chiamata all'IA
             response = model.generate_content(
                 [prompt, img],
                 safety_settings=safety_settings
             )
             
-            # Controllo validità risposta (Evita l'errore "Part")
-            if response.candidates and response.candidates[0].content.parts:
+            # Gestione della risposta con debug
+            try:
+                # Se l'IA ha risposto correttamente
                 return response.text, screenshot_path
-            else:
-                return "L'analisi è stata bloccata dai filtri di sicurezza. Prova un sito diverso o meno complesso.", screenshot_path
-            
+            except (ValueError, AttributeError):
+                # Se la risposta è vuota o bloccata, analizziamo il motivo
+                if response.candidates:
+                    reason = response.candidates[0].finish_reason
+                    # Mappa dei motivi comuni
+                    reasons_map = {1: "STOP (OK)", 2: "MAX_TOKENS", 3: "SAFETY (Bloccato dai filtri)", 4: "RECITATION", 5: "OTHER"}
+                    error_msg = f"L'IA ha restituito un codice di blocco: {reasons_map.get(reason, reason)}. Prova un sito più semplice come example.com."
+                    return error_msg, screenshot_path
+                return "Risposta vuota dall'IA. Verifica i permessi della tua API Key.", screenshot_path
+                
         finally:
             await browser.close()
 
-# --- INTERFACCIA UTENTE (UI) ---
-st.title("🔍 AI Web Auditor Professional")
-st.markdown("Analisi completa in tempo reale basata su **Gemini 3** e **Playwright**.")
+# --- INTERFACCIA STREAMLIT ---
+st.title("🔍 AI Web Auditor - Versione Stabile")
 
-# Gestione API KEY dai Segreti o da Sidebar
-if "GEMINI_KEY" in st.secrets:
-    api_key = st.secrets["GEMINI_KEY"]
-else:
-    api_key = st.sidebar.text_input("Inserisci Gemini API Key", type="password", help="Ottienila su Google AI Studio")
+# Caricamento API Key dai Secrets o Input
+api_key = st.secrets.get("GEMINI_KEY", st.sidebar.text_input("Inserisci Gemini API Key", type="password"))
 
-target_url = st.text_input("URL del sito da analizzare:", placeholder="https://www.tuosito.it")
+target_url = st.text_input("URL del sito (inizia con https://):", placeholder="https://example.com")
 
-if st.button("🚀 Avvia Analisi Multimodale"):
+if st.button("Avvia Analisi"):
     if not target_url or not api_key:
-        st.warning("Assicurati di inserire sia l'URL che l'API Key.")
+        st.warning("Inserisci URL e API Key.")
     else:
         try:
-            with st.spinner("Catturando il sito e interrogando l'IA... Attendere circa 30 secondi."):
+            with st.spinner("Analizzando il sito..."):
                 report, ss_path = asyncio.run(run_audit(target_url, api_key))
                 
-                st.success("Analisi completata!")
-                
-                col1, col2 = st.columns([1, 1])
+                col1, col2 = st.columns(2)
                 with col1:
-                    st.subheader("📸 Screenshot")
-                    st.image(ss_path, use_container_width=True)
-                
+                    st.image(ss_path, caption="Screenshot catturato")
                 with col2:
-                    st.subheader("📝 Report Strategico")
-                    st.markdown(report)
-                    
+                    st.markdown("### Report AI")
+                    st.write(report)
         except Exception as e:
-            st.error(f"Si è verificato un errore: {e}")
-            st.info("💡 Tip: Se vedi errori relativi al browser, prova a fare un 'Reboot App' dalla dashboard di Streamlit.")
-
-st.divider()
-st.caption("AI Web Auditor v2.1 • Strumento professionale di analisi tecnica")
+            st.error(f"Errore imprevisto: {e}")
