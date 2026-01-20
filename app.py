@@ -7,10 +7,10 @@ import google.generativeai as genai
 from google.generativeai.types import HarmCategory, HarmBlockThreshold
 from PIL import Image
 
-# --- CONFIGURAZIONE ---
+# --- CONFIGURAZIONE PAGINA ---
 st.set_page_config(page_title="AI Web Auditor 🚀", layout="wide")
 
-# Installazione browser all'avvio su Streamlit Cloud
+# --- TRUCCO PER STREAMLIT CLOUD (BROWSER INSTALL) ---
 if "playwright_installed" not in st.session_state:
     try:
         subprocess.run(["playwright", "install", "chromium"])
@@ -18,91 +18,111 @@ if "playwright_installed" not in st.session_state:
     except Exception as e:
         st.error(f"Errore installazione browser: {e}")
 
+# --- LOGICA DI AUDIT ASINCRONA ---
 async def run_audit(url, api_key):
+    # Configurazione AI
     genai.configure(api_key=api_key)
     
-    # Usiamo 1.5-flash: è il più veloce e stabile per compiti di "vision"
-    model = genai.GenerativeModel('models/gemini-1.5-flash')
+    # Impostazioni di sicurezza per evitare blocchi (Finish Reason 1)
+    # Nota: Su Gemini 3 queste impostazioni sono fondamentali
+    safety_settings = {
+        HarmCategory.HARM_CATEGORY_HATE_SPEECH: HarmBlockThreshold.BLOCK_NONE,
+        HarmCategory.HARM_CATEGORY_HARASSMENT: HarmBlockThreshold.BLOCK_NONE,
+        HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT: HarmBlockThreshold.BLOCK_NONE,
+        HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT: HarmBlockThreshold.BLOCK_NONE,
+    }
     
+    # UTILIZZO DI GEMINI 3 FLASH PREVIEW
+    model = genai.GenerativeModel('models/gemini-3-flash-preview')
     screenshot_path = "/tmp/screenshot.png"
     
     async with async_playwright() as p:
-        # Lancio browser con opzioni di compatibilità massima
+        # Lancio browser ottimizzato per Cloud
         browser = await p.chromium.launch(
             headless=True, 
             args=["--no-sandbox", "--disable-setuid-sandbox", "--disable-gpu", "--disable-dev-shm-usage"]
         )
-        page = await browser.new_page()
+        context = await browser.new_context(viewport={'width': 1280, 'height': 800})
+        page = await context.new_page()
         
         try:
             # Navigazione
             await page.goto(url, wait_until="networkidle", timeout=60000)
+            
+            # Screenshot
             await page.screenshot(path=screenshot_path)
             
-            # Prepariamo l'immagine
+            # Estrazione Dati Tecnici minimi per il prompt
+            title = await page.title()
+            
+            # Preparazione immagine per l'analisi
             img = Image.open(screenshot_path)
             
-            # Prompt tecnico e neutro per "ingannare" i filtri di sicurezza
-            prompt = """
-            Esegui un'analisi tecnica dell'interfaccia utente presente in questa immagine.
-            - Identifica la struttura del layout.
-            - Valuta la chiarezza dei testi e dei bottoni.
-            - Fornisci 3 suggerimenti puramente tecnici per migliorare l'esperienza utente.
-            Rispondi in italiano in modo professionale.
+            # Prompt tecnico e neutro (per minimizzare i rifiuti dell'IA)
+            prompt = f"""
+            Esegui un'ispezione tecnica dell'interfaccia utente basata sugli elementi presenti nello screenshot.
+            Sito: {title}
+            
+            1. Descrivi la disposizione degli elementi (layout).
+            2. Valuta la chiarezza della gerarchia visiva.
+            3. Fornisci 3 suggerimenti tecnici per migliorare l'esperienza utente.
+            
+            Rispondi in italiano con tono professionale.
             """
             
-            # Impostazioni di sicurezza: BLOCK_NONE per tutto
-            safety_settings = {
-                HarmCategory.HARM_CATEGORY_HATE_SPEECH: HarmBlockThreshold.BLOCK_NONE,
-                HarmCategory.HARM_CATEGORY_HARASSMENT: HarmBlockThreshold.BLOCK_NONE,
-                HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT: HarmBlockThreshold.BLOCK_NONE,
-                HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT: HarmBlockThreshold.BLOCK_NONE,
-            }
-            
-            # Chiamata all'IA
+            # Interrogazione Gemini 3
             response = model.generate_content(
                 [prompt, img],
                 safety_settings=safety_settings
             )
             
-            # Gestione della risposta con debug
+            # Gestione della risposta per evitare crash se bloccata
             try:
-                # Se l'IA ha risposto correttamente
-                return response.text, screenshot_path
+                if response.candidates and response.candidates[0].content.parts:
+                    return response.text, screenshot_path
+                else:
+                    # Se non ci sono parti nella risposta, cerchiamo di capire il motivo
+                    reason = response.candidates[0].finish_reason if response.candidates else "Sconosciuto"
+                    return f"L'analisi è stata bloccata dai filtri di sicurezza (Codice: {reason}). Prova un sito più semplice come example.com.", screenshot_path
             except (ValueError, AttributeError):
-                # Se la risposta è vuota o bloccata, analizziamo il motivo
-                if response.candidates:
-                    reason = response.candidates[0].finish_reason
-                    # Mappa dei motivi comuni
-                    reasons_map = {1: "STOP (OK)", 2: "MAX_TOKENS", 3: "SAFETY (Bloccato dai filtri)", 4: "RECITATION", 5: "OTHER"}
-                    error_msg = f"L'IA ha restituito un codice di blocco: {reasons_map.get(reason, reason)}. Prova un sito più semplice come example.com."
-                    return error_msg, screenshot_path
-                return "Risposta vuota dall'IA. Verifica i permessi della tua API Key.", screenshot_path
-                
+                return "Errore nella generazione della risposta. Verifica la tua API Key.", screenshot_path
+            
         finally:
             await browser.close()
 
-# --- INTERFACCIA STREAMLIT ---
-st.title("🔍 AI Web Auditor - Versione Stabile")
+# --- INTERFACCIA UTENTE (UI) ---
+st.title("🔍 AI Web Auditor Professional (Gemini 3)")
 
-# Caricamento API Key dai Secrets o Input
-api_key = st.secrets.get("GEMINI_KEY", st.sidebar.text_input("Inserisci Gemini API Key", type="password"))
+# Gestione API KEY dai Segreti o da Sidebar
+if "GEMINI_KEY" in st.secrets:
+    api_key = st.secrets["GEMINI_KEY"]
+else:
+    api_key = st.sidebar.text_input("Inserisci Gemini API Key", type="password")
 
-target_url = st.text_input("URL del sito (inizia con https://):", placeholder="https://example.com")
+target_url = st.text_input("URL del sito da analizzare:", placeholder="https://www.tuosito.it")
 
-if st.button("Avvia Analisi"):
+if st.button("🚀 Avvia Analisi Gemini 3"):
     if not target_url or not api_key:
         st.warning("Inserisci URL e API Key.")
     else:
         try:
-            with st.spinner("Analizzando il sito..."):
+            with st.spinner("Analisi in corso con Gemini 3... Attendere circa 30 secondi."):
                 report, ss_path = asyncio.run(run_audit(target_url, api_key))
                 
-                col1, col2 = st.columns(2)
+                st.success("Analisi completata!")
+                
+                col1, col2 = st.columns([1, 1])
                 with col1:
-                    st.image(ss_path, caption="Screenshot catturato")
+                    st.subheader("📸 Screenshot")
+                    if os.path.exists(ss_path):
+                        st.image(ss_path, use_container_width=True)
+                
                 with col2:
-                    st.markdown("### Report AI")
-                    st.write(report)
+                    st.subheader("📝 Report Strategico")
+                    st.markdown(report)
+                    
         except Exception as e:
-            st.error(f"Errore imprevisto: {e}")
+            st.error(f"Si è verificato un errore: {e}")
+
+st.divider()
+st.caption("AI Web Auditor v2.2 • Powered by Gemini 3 Flash Preview")
