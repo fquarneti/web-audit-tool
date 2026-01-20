@@ -45,50 +45,47 @@ async def run_audit(url, api_key):
                 const html = document.documentElement.innerHTML;
                 const scripts = Array.from(document.querySelectorAll('script')).map(s => s.src || '');
                 const links = Array.from(document.querySelectorAll('link')).map(l => l.href || '');
-                const bodyClass = document.body.className;
-
-                const check = (pattern) => html.includes(pattern) || scripts.some(s => s.includes(pattern)) || links.some(l => l.includes(pattern));
+                
+                const exists = (sel) => document.querySelector(sel) !== null;
+                const checkPath = (pat) => scripts.some(s => s.includes(pat)) || links.some(l => l.includes(pat));
 
                 return {
-                    "CMS & Piattaforme": {
-                        "WordPress": check('wp-content') || check('wp-includes'),
-                        "Shopify": check('cdn.shopify.com') || window.Shopify,
-                        "Wix": check('wix.com') || check('wix-site'),
-                        "Squarespace": check('squarespace.com'),
-                        "Joomla": check('com_content'),
-                        "Magento": check('mage/') || window.Magento,
-                        "PrestaShop": check('prestashop')
+                    "Piattaforma & CMS": {
+                        "WordPress": exists('link[href*="wp-content"]') || checkPath('wp-includes'),
+                        "Shopify": window.Shopify || checkPath('cdn.shopify.com'),
+                        "Wix": window.wixEmbedsAPI || checkPath('wixstatic.com'),
+                        "Squarespace": window.Static && window.Static.SQUARESPACE_CONTEXT,
+                        "Magento": exists('script[src*="/static/frontend/"]') || window.Magento,
+                        "Joomla": checkPath('com_content'),
+                        "PrestaShop": window.prestashop || checkPath('prestashop')
                     },
                     "Page Builders": {
-                        "Elementor": check('elementor'),
-                        "Divi": check('et-pb-') || check('divi'),
-                        "WPBakery": check('js_composer'),
-                        "Oxygen": check('oxygen-'),
-                        "Gutenberg": check('wp-block-'),
-                        "Beaver Builder": check('fl-builder'),
-                        "Webflow": check('wf-')
+                        "Divi": exists('#et-main-area') || exists('.et_pb_section') || checkPath('themes/Divi'),
+                        "Elementor": window.elementorFrontend || exists('.elementor'),
+                        "WPBakery": exists('.vc_row') || checkPath('js_composer'),
+                        "Oxygen": exists('.ct-section') || checkPath('plugins/oxygen'),
+                        "Gutenberg": exists('.wp-block-group') || exists('link[href*="block-library"]'),
+                        "Webflow": exists('html[data-wf-page]') || checkPath('webflow.js')
                     },
-                    "SEO & Marketing": {
-                        "Yoast SEO": check('yoast'),
-                        "Rank Math": check('rank-math'),
-                        "Mailchimp": check('chimpStatic'),
-                        "ActiveCampaign": check('trackcmp'),
-                        "HubSpot": check('hs-scripts')
+                    "Marketing & SEO": {
+                        "Yoast SEO": html.includes('yoast-schema-graph'),
+                        "Rank Math": html.includes('rank-math'),
+                        "HubSpot": window._hsq || checkPath('js.hs-scripts.com'),
+                        "Mailchimp": checkPath('chimpStatic') || exists('#mc-embedded-subscribe-form')
                     },
                     "Analytics & Tracking": {
-                        "Google Analytics 4": check('gtag'),
-                        "Facebook Pixel": check('fbevents.js'),
-                        "Hotjar": check('hotjar'),
-                        "Microsoft Clarity": check('clarity.ms'),
-                        "Google Tag Manager": check('googletagmanager')
+                        "GA4": window.google_tag_data || checkPath('gtag/js'),
+                        "FB Pixel": window.fbq || checkPath('fbevents.js'),
+                        "Hotjar": window.hj || checkPath('hotjar-'),
+                        "Clarity": window.clarity || checkPath('clarity.ms')
                     },
-                    "Librerie JS & CSS": {
-                        "jQuery": check('jquery'),
-                        "React": check('react'),
-                        "Vue.js": check('vue'),
-                        "Bootstrap": check('bootstrap'),
-                        "Tailwind CSS": html.includes('tailwind'),
-                        "Font Awesome": check('font-awesome')
+                    "Librerie & CSS": {
+                        "jQuery": window.jQuery,
+                        "React": window.React || exists('[data-reactroot]'),
+                        "Vue.js": window.Vue || exists('[data-v-'),
+                        "Bootstrap": window.bootstrap || checkPath('bootstrap'),
+                        "Tailwind": html.includes('tailwind') || html.includes('tw-'),
+                        "FontAwesome": checkPath('font-awesome') || exists('.fa-')
                     }
                 };
             }""")
