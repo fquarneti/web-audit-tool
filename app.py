@@ -57,16 +57,15 @@ async def run_audit(url, api_key):
             
             # Analisi Visiva
             img = Image.open(screenshot_path)
-            prompt = f"""
-            Analizza questo sito come un Senior UX/UI Designer e Consulente SEO.
-            Dati tecnici rilevati:
-            - Titolo: {title}
-            - Tag H1: {h1_text}
-            
-            Fornisci un report professionale in italiano diviso in 3 sezioni:
-            1. Punti di forza e debolezza dell'interfaccia.
-            2. Analisi SEO rapida dei testi estratti.
-            3. Una singola azione prioritaria da fare subito per migliorare le conversioni.
+            img = img.resize((1024, int(1024 * img.height / img.width)), Image.Resampling.LANCZOS)
+            img.save(screenshot_path, quality=85)
+            img = Image.open(screenshot_path)
+            prompt = """
+                Esegui un'ispezione tecnica dell'interfaccia utente basata sugli elementi geometrici e testuali presenti.
+                1. Descrivi la disposizione degli elementi (layout).
+                2. Valuta il contrasto cromatico e la gerarchia visiva.
+                3. Fornisci suggerimenti per l'accessibilità web (WCAG).
+                Parla solo di aspetti tecnici e di design, evita commenti su loghi o brand.
             """
             
             response = model.generate_content(
