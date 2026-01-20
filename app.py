@@ -45,28 +45,42 @@ async def run_audit(url, api_key):
             # 1. Navigazione e acquisizione dati tecnici
             await page.goto(url, wait_until="networkidle", timeout=60000)
             
-            # Estrazione CMS, Plugin e Librerie via JavaScript
+            # --- ANALISI TECNICA AVANZATA ---
             tech_data = await page.evaluate("""() => {
-                const scripts = Array.from(document.querySelectorAll('script')).map(s => s.src.toLowerCase());
-                const html = document.documentElement.innerHTML.toLowerCase();
+                const html = document.documentElement.innerHTML;
+                const scripts = Array.from(document.querySelectorAll('script')).map(s => s.src || '');
+                const links = Array.from(document.querySelectorAll('link')).map(l => l.href || '');
                 
-                // Rilevamento CMS
-                const isWP = html.includes('wp-content') || html.includes('wp-includes');
-                
-                // Rilevamento Plugin (estratto dai percorsi wp-content)
-                const plugins = scripts.filter(s => s.includes('wp-content/plugins/'))
-                                       .map(s => s.split('plugins/')[1].split('/')[0]);
-                
+                const detect = (pattern) => html.includes(pattern) || scripts.some(s => s.includes(pattern)) || links.some(l => l.includes(pattern));
+
                 return {
-                    cms: isWP ? "WordPress" : "Altro/Non rilevato",
-                    meta_generator: document.querySelector('meta[name="generator"]')?.content || "N/A",
-                    plugins: [...new Set(plugins)],
-                    libraries: {
-                        jquery: scripts.some(s => s.includes('jquery')),
-                        react: scripts.some(s => s.includes('react')),
-                        bootstrap: scripts.some(s => s.includes('bootstrap')),
-                        tracking_google: scripts.some(s => s.includes('gtag') || s.includes('analytics')),
-                        tracking_pixel: scripts.some(s => s.includes('fbevents'))
+                    cms: {
+                        wordpress: detect('wp-content'),
+                        shopify: detect('cdn.shopify.com') || window.Shopify,
+                        joomla: detect('com_content'),
+                        wix: detect('wix.com'),
+                        magento: detect('mage/') || window.Magento
+                    },
+                    builders: {
+                        elementor: detect('elementor'),
+                        divi: detect('et-pb-'),
+                        wp_bakery: detect('js_composer'),
+                        webflow: detect('wf-')
+                    },
+                    ecommerce: {
+                        woocommerce: detect('woocommerce'),
+                        presta: detect('prestashop')
+                    },
+                    analytics: {
+                        ga4: detect('gtag') || detect('google-analytics'),
+                        fb_pixel: detect('fbevents.js'),
+                        hotjar: detect('hotjar'),
+                        clarity: detect('clarity.ms')
+                    },
+                    ui_frameworks: {
+                        bootstrap: detect('bootstrap'),
+                        tailwind: html.includes('tailwind'),
+                        fontawesome: detect('font-awesome')
                     }
                 };
             }""")
