@@ -1,115 +1,122 @@
 import streamlit as st
+import asyncio
 import os
 import subprocess
-
-# --- TRUCCO PER STREAMLIT CLOUD 2026 ---
-# Questo script viene eseguito all'avvio per assicurarsi che i browser esistano
-if "playwright_installed" not in st.session_state:
-    try:
-        # Installa i browser necessari
-        subprocess.run(["playwright", "install", "chromium"])
-        st.session_state["playwright_installed"] = True
-    except Exception as e:
-        st.error(f"Errore installazione browser: {e}")
-
-import asyncio
 from playwright.async_api import async_playwright
 import google.generativeai as genai
+from google.generativeai.types import HarmCategory, HarmBlockThreshold
 from PIL import Image
 
 # --- CONFIGURAZIONE PAGINA ---
 st.set_page_config(page_title="AI Web Auditor 🚀", layout="wide")
 
-# --- FUNZIONE INSTALLAZIONE BROWSER ---
-# Necessaria per Streamlit Cloud
-def install_playwright():
+# --- TRUCCO PER STREAMLIT CLOUD (BROWSER INSTALL) ---
+if "playwright_installed" not in st.session_state:
     try:
-        subprocess.run(["playwright", "install", "chromium"], check=True)
+        subprocess.run(["playwright", "install", "chromium"])
+        st.session_state["playwright_installed"] = True
     except Exception as e:
-        st.error(f"Errore durante l'installazione dei browser: {e}")
+        st.error(f"Errore installazione browser: {e}")
 
-# --- LOGICA DI AUDIT ---
+# --- LOGICA DI AUDIT ASINCRONA ---
 async def run_audit(url, api_key):
     # Configurazione AI
     genai.configure(api_key=api_key)
-    model = genai.GenerativeModel('models/gemini-3-flash-preview')
     
-    # Cartella temporanea sicura per Linux/Streamlit Cloud
+    # Impostazioni di sicurezza per evitare blocchi (Finish Reason 1)
+    safety_settings = {
+        HarmCategory.HARM_CATEGORY_HATE_SPEECH: HarmBlockThreshold.BLOCK_NONE,
+        HarmCategory.HARM_CATEGORY_HARASSMENT: HarmBlockThreshold.BLOCK_NONE,
+        HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT: HarmBlockThreshold.BLOCK_NONE,
+        HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT: HarmBlockThreshold.BLOCK_NONE,
+    }
+    
+    model = genai.GenerativeModel('models/gemini-3-flash-preview')
     screenshot_path = "/tmp/screenshot.png"
     
     async with async_playwright() as p:
-        # Lancio browser con argomenti di sicurezza per il cloud
-        browser = await p.chromium.launch(headless=True, args=["--no-sandbox", "--disable-setuid-sandbox"])
+        # Lancio browser ottimizzato per Cloud
+        browser = await p.chromium.launch(
+            headless=True, 
+            args=["--no-sandbox", "--disable-setuid-sandbox", "--disable-gpu"]
+        )
         context = await browser.new_context(viewport={'width': 1280, 'height': 800})
         page = await context.new_page()
         
         try:
+            # Caricamento Pagina
             await page.goto(url, wait_until="networkidle", timeout=60000)
             
-            # Estrazione dati tecnici (Pilastro SEO/Tecnico)
+            # Estrazione Dati Tecnici
             title = await page.title()
-            h1 = await page.evaluate("() => Array.from(document.querySelectorAll('h1')).map(el => el.innerText)")
+            h1_tags = await page.evaluate("() => Array.from(document.querySelectorAll('h1')).map(el => el.innerText)")
+            h1_text = h1_tags[0] if h1_tags else "Nessun H1 trovato"
             
             # Screenshot
             await page.screenshot(path=screenshot_path)
             
-            # Analisi Multimodale
+            # Analisi Visiva
             img = Image.open(screenshot_path)
             prompt = f"""
-            Agisci come un esperto Senior di UX e SEO. 
-            Dati tecnici estratti:
+            Analizza questo sito come un Senior UX/UI Designer e Consulente SEO.
+            Dati tecnici rilevati:
             - Titolo: {title}
-            - Tag H1: {h1}
+            - Tag H1: {h1_text}
             
-            Analizza lo screenshot e i dati sopra per fornire un report in italiano suddiviso in:
-            1. Valutazione Visiva (UX/UI)
-            2. Ottimizzazione SEO (Titoli e Struttura)
-            3. Consiglio d'oro per aumentare le conversioni.
+            Fornisci un report professionale in italiano diviso in 3 sezioni:
+            1. Punti di forza e debolezza dell'interfaccia.
+            2. Analisi SEO rapida dei testi estratti.
+            3. Una singola azione prioritaria da fare subito per migliorare le conversioni.
             """
             
-            response = model.generate_content([prompt, img])
-            return response.text, screenshot_path
+            response = model.generate_content(
+                [prompt, img],
+                safety_settings=safety_settings
+            )
+            
+            # Controllo validità risposta (Evita l'errore "Part")
+            if response.candidates and response.candidates[0].content.parts:
+                return response.text, screenshot_path
+            else:
+                return "L'analisi è stata bloccata dai filtri di sicurezza. Prova un sito diverso o meno complesso.", screenshot_path
             
         finally:
             await browser.close()
 
 # --- INTERFACCIA UTENTE (UI) ---
-st.title("🚀 AI Web Auditor Professional")
-st.sidebar.header("Configurazione")
-user_api_key = st.sidebar.text_input("Gemini API Key", value="AIzaSyBUMACiDRdQ_6vvFPR6AIazRjUD68E2bok", type="password")
+st.title("🔍 AI Web Auditor Professional")
+st.markdown("Analisi completa in tempo reale basata su **Gemini 3** e **Playwright**.")
 
-target_url = st.text_input("Inserisci l'URL del sito da analizzare:", placeholder="https://www.esempio.it")
+# Gestione API KEY dai Segreti o da Sidebar
+if "GEMINI_KEY" in st.secrets:
+    api_key = st.secrets["GEMINI_KEY"]
+else:
+    api_key = st.sidebar.text_input("Inserisci Gemini API Key", type="password", help="Ottienila su Google AI Studio")
 
-if st.button("Avvia Audit Completo"):
-    if not target_url or not user_api_key:
-        st.warning("Inserisci sia l'URL che la API Key.")
+target_url = st.text_input("URL del sito da analizzare:", placeholder="https://www.tuosito.it")
+
+if st.button("🚀 Avvia Analisi Multimodale"):
+    if not target_url or not api_key:
+        st.warning("Assicurati di inserire sia l'URL che l'API Key.")
     else:
-        # Assicuriamoci che i browser siano pronti (solo per il cloud)
-        if not os.path.exists("/home/adminuser/.cache/ms-playwright"):
-            with st.spinner("Installazione browser in corso (solo primo avvio)..."):
-                install_playwright()
-        
         try:
-            with st.spinner("Analisi in corso... Gemini sta osservando il sito..."):
-                # Eseguiamo la funzione asincrona
-                report_text, ss_path = asyncio.run(run_audit(target_url, user_api_key))
+            with st.spinner("Catturando il sito e interrogando l'IA... Attendere circa 30 secondi."):
+                report, ss_path = asyncio.run(run_audit(target_url, api_key))
                 
-                st.success("✅ Audit Completato!")
+                st.success("Analisi completata!")
                 
-                # Visualizzazione Risultati
-                col_img, col_txt = st.columns([1, 1])
-                
-                with col_img:
+                col1, col2 = st.columns([1, 1])
+                with col1:
                     st.subheader("📸 Screenshot")
-                    if os.path.exists(ss_path):
-                        st.image(ss_path, use_container_width=True)
+                    st.image(ss_path, use_container_width=True)
                 
-                with col_txt:
-                    st.subheader("🧠 Analisi IA")
-                    st.markdown(report_text)
+                with col2:
+                    st.subheader("📝 Report Strategico")
+                    st.markdown(report)
                     
         except Exception as e:
             st.error(f"Si è verificato un errore: {e}")
+            st.info("💡 Tip: Se vedi errori relativi al browser, prova a fare un 'Reboot App' dalla dashboard di Streamlit.")
 
 st.divider()
-st.caption("Creato con Gemini 3 & Streamlit • 2026 Edition")
+st.caption("AI Web Auditor v2.1 • Strumento professionale di analisi tecnica")
