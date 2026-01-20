@@ -18,130 +18,140 @@ if "playwright_installed" not in st.session_state:
     except Exception as e:
         st.error(f"Errore installazione browser: {e}")
 
-# --- LOGICA DI AUDIT AVANZATA (STILE WAPPALYZER) ---
+# --- LOGICA DI AUDIT AVANZATA (WAPPALYZER STYLE) ---
 async def run_audit(url, api_key):
     genai.configure(api_key=api_key)
+    
     safety_settings = {
         HarmCategory.HARM_CATEGORY_HATE_SPEECH: HarmBlockThreshold.BLOCK_NONE,
         HarmCategory.HARM_CATEGORY_HARASSMENT: HarmBlockThreshold.BLOCK_NONE,
         HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT: HarmBlockThreshold.BLOCK_NONE,
         HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT: HarmBlockThreshold.BLOCK_NONE,
     }
+    
     model = genai.GenerativeModel('models/gemini-3-flash-preview')
     screenshot_path = "/tmp/screenshot.png"
     
     async with async_playwright() as p:
         browser = await p.chromium.launch(headless=True, args=["--no-sandbox", "--disable-gpu"])
-        context = await browser.new_context(user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36")
+        context = await browser.new_context(user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
         page = await context.new_page()
         
         try:
             await page.goto(url, wait_until="networkidle", timeout=60000)
             
-            # --- ANALISI TECNICA AVANZATA ---
+            # --- ANALISI TECNICA ESTESA (IL "PEZZO LUNGO") ---
             tech_data = await page.evaluate("""() => {
                 const html = document.documentElement.innerHTML;
                 const scripts = Array.from(document.querySelectorAll('script')).map(s => s.src || '');
                 const links = Array.from(document.querySelectorAll('link')).map(l => l.href || '');
-                
-                const detect = (pattern) => html.includes(pattern) || scripts.some(s => s.includes(pattern)) || links.some(l => l.includes(pattern));
+                const bodyClass = document.body.className;
+
+                const check = (pattern) => html.includes(pattern) || scripts.some(s => s.includes(pattern)) || links.some(l => l.includes(pattern));
 
                 return {
-                    cms: {
-                        wordpress: detect('wp-content'),
-                        shopify: detect('cdn.shopify.com') || window.Shopify,
-                        joomla: detect('com_content'),
-                        wix: detect('wix.com'),
-                        magento: detect('mage/') || window.Magento
+                    "CMS & Piattaforme": {
+                        "WordPress": check('wp-content') || check('wp-includes'),
+                        "Shopify": check('cdn.shopify.com') || window.Shopify,
+                        "Wix": check('wix.com') || check('wix-site'),
+                        "Squarespace": check('squarespace.com'),
+                        "Joomla": check('com_content'),
+                        "Magento": check('mage/') || window.Magento,
+                        "PrestaShop": check('prestashop')
                     },
-                    builders: {
-                        elementor: detect('elementor'),
-                        divi: detect('et-pb-'),
-                        wp_bakery: detect('js_composer'),
-                        webflow: detect('wf-')
+                    "Page Builders": {
+                        "Elementor": check('elementor'),
+                        "Divi": check('et-pb-') || check('divi'),
+                        "WPBakery": check('js_composer'),
+                        "Oxygen": check('oxygen-'),
+                        "Gutenberg": check('wp-block-'),
+                        "Beaver Builder": check('fl-builder'),
+                        "Webflow": check('wf-')
                     },
-                    ecommerce: {
-                        woocommerce: detect('woocommerce'),
-                        presta: detect('prestashop')
+                    "SEO & Marketing": {
+                        "Yoast SEO": check('yoast'),
+                        "Rank Math": check('rank-math'),
+                        "Mailchimp": check('chimpStatic'),
+                        "ActiveCampaign": check('trackcmp'),
+                        "HubSpot": check('hs-scripts')
                     },
-                    analytics: {
-                        ga4: detect('gtag') || detect('google-analytics'),
-                        fb_pixel: detect('fbevents.js'),
-                        hotjar: detect('hotjar'),
-                        clarity: detect('clarity.ms')
+                    "Analytics & Tracking": {
+                        "Google Analytics 4": check('gtag'),
+                        "Facebook Pixel": check('fbevents.js'),
+                        "Hotjar": check('hotjar'),
+                        "Microsoft Clarity": check('clarity.ms'),
+                        "Google Tag Manager": check('googletagmanager')
                     },
-                    ui_frameworks: {
-                        bootstrap: detect('bootstrap'),
-                        tailwind: html.includes('tailwind'),
-                        fontawesome: detect('font-awesome')
+                    "Librerie JS & CSS": {
+                        "jQuery": check('jquery'),
+                        "React": check('react'),
+                        "Vue.js": check('vue'),
+                        "Bootstrap": check('bootstrap'),
+                        "Tailwind CSS": html.includes('tailwind'),
+                        "Font Awesome": check('font-awesome')
                     }
                 };
             }""")
             
+            # Screenshot e analisi visiva
             await page.screenshot(path=screenshot_path)
-            img = Image.open(screenshot_path)
+            img = Image.open(screenshot_path).convert("RGB")
             
             prompt = f"""
-            Analizza lo screenshot e questi dati tecnici 'under-the-hood':
-            CMS & Piattaforma: {tech_data['cms']}
-            Page Builder: {tech_data['builders']}
-            E-commerce: {tech_data['ecommerce']}
-            Tracking & Analitica: {tech_data['analytics']}
-            Framework UI: {tech_data['ui_frameworks']}
-
-            Fornisci un audit professionale:
-            1. Analisi Stack Tecnologico: Valuta se la scelta tecnologica è coerente con il tipo di sito.
-            2. Analisi UX/UI: Come l'utente interagisce con il layout.
-            3. Opportunità: Suggerisci 2 tool o miglioramenti tecnici (es. "Manca Hotjar per registrare le sessioni" o "Passa da Elementor a Gutenberg per velocità").
+            Analizza questo sito web.
+            STACK TECNICO RILEVATO: {tech_data}
+            
+            Fornisci un report dettagliato in italiano:
+            1. Analisi dello Stack: Quali vantaggi o svantaggi portano queste tecnologie al sito?
+            2. Analisi UX: Valuta l'aspetto visivo basandoti sullo screenshot.
+            3. Errori e Opportunità: Cosa manca (es. pixel mancanti, builder pesanti)?
             """
             
-            response = model.generate_content([prompt, img], safety_settings=safety_settings)
-            return response.text, screenshot_path, tech_data
+            try:
+                response = model.generate_content([prompt, img], safety_settings=safety_settings)
+                report_text = response.text if (response.candidates and response.candidates[0].content.parts) else "L'IA ha bloccato l'analisi visiva (Finish Reason 1). Consulta i dati tecnici sotto."
+            except:
+                report_text = "Errore durante la generazione del report IA. Consulta i dati tecnici rilevati manualmente."
+                
+            return report_text, screenshot_path, tech_data
             
         finally:
             await browser.close()
 
 # --- INTERFACCIA STREAMLIT ---
-st.title("🚀 AI Web Auditor Pro (Wappalyzer Style)")
-api_key = st.secrets.get("GEMINI_KEY", st.sidebar.text_input("Gemini API Key", type="password"))
-target_url = st.text_input("URL del sito:", placeholder="https://example.com")
+st.title("🚀 AI Web Auditor Pro - Deep Analysis")
 
-if st.button("Avvia Deep Audit"):
+api_key = st.secrets.get("GEMINI_KEY", st.sidebar.text_input("Gemini API Key", type="password"))
+target_url = st.text_input("Inserisci URL:", placeholder="https://www.esempio.it")
+
+if st.button("Avvia Scansione Profonda"):
     if not target_url or not api_key:
-        st.warning("Dati mancanti.")
+        st.warning("Mancano dati.")
     else:
         try:
-            with st.spinner("Scansione impronte digitali e analisi Gemini 3..."):
+            with st.spinner("Eseguendo analisi tecnica stile Wappalyzer..."):
                 report, ss_path, tech = asyncio.run(run_audit(target_url, api_key))
                 
-                st.success("Analisi completata!")
-                t1, t2 = st.tabs(["📝 Report IA", "🔍 Tech Stack Detagliato"])
+                st.success("Audit Completato!")
                 
-                with t1:
+                tab1, tab2 = st.tabs(["📝 Report Strategico IA", "🛠️ Analisi Tecnica Dettagliata"])
+                
+                with tab1:
                     c1, c2 = st.columns([1, 1.2])
-                    c1.image(ss_path, use_container_width=True)
+                    c1.image(ss_path, caption="Analisi Visiva")
                     c2.markdown(report)
                 
-                with t2:
-                    st.subheader("Tecnologie Identificate")
-                    # Creiamo delle card per le tecnologie trovate
-                    cols = st.columns(4)
-                    
-                    # Logica per mostrare solo ciò che è stato trovato
-                    categories = {
-                        "CMS": tech['cms'],
-                        "Builders": tech['builders'],
-                        "E-com": tech['ecommerce'],
-                        "Analytics": tech['analytics']
-                    }
-                    
-                    for i, (name, data) in enumerate(categories.items()):
-                        found = [k.capitalize() for k, v in data.items() if v]
-                        cols[i % 4].write(f"**{name}**")
+                with tab2:
+                    st.subheader("Fingerprinting Tecnologico")
+                    for cat, items in tech.items():
+                        found = [k for k, v in items.items() if v]
                         if found:
-                            for item in found: cols[i % 4].success(item)
+                            with st.expander(f"✅ {cat}", expanded=True):
+                                cols = st.columns(len(found) if len(found) > 0 else 1)
+                                for i, item in enumerate(found):
+                                    cols[i % len(found)].info(item)
                         else:
-                            cols[i % 4].info("Nessuno")
+                            st.write(f"⚪ **{cat}**: Nessun elemento rilevato.")
 
         except Exception as e:
             st.error(f"Errore: {e}")
