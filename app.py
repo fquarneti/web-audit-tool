@@ -1,7 +1,18 @@
 import streamlit as st
-import asyncio
 import os
 import subprocess
+
+# --- TRUCCO PER STREAMLIT CLOUD 2026 ---
+# Questo script viene eseguito all'avvio per assicurarsi che i browser esistano
+if "playwright_installed" not in st.session_state:
+    try:
+        # Installa i browser necessari
+        subprocess.run(["playwright", "install", "chromium"])
+        st.session_state["playwright_installed"] = True
+    except Exception as e:
+        st.error(f"Errore installazione browser: {e}")
+
+import asyncio
 from playwright.async_api import async_playwright
 import google.generativeai as genai
 from PIL import Image
